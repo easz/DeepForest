@@ -29,13 +29,13 @@ class deepforest(pl.LightningModule):
             self: a deepforest pytorch lightning module
         """
         super().__init__()
-        
+
         #Pytorch lightning handles the device, but we need one for adhoc methods like predict_image.
         if torch.cuda.is_available():
             self.current_device = torch.device("cuda")
         else:
             self.current_device = torch.device("cpu")
-            
+
         # Read config file. Defaults to deepforest_config.yml in working directory.
         # Falls back to default installed version
         if os.path.exists(config_file):
@@ -56,24 +56,24 @@ class deepforest(pl.LightningModule):
 
         self.num_classes = num_classes
         self.create_model()
-                
+
         #Label encoder and decoder
         if not len(label_dict) == num_classes:
             raise ValueError(
                 'label_dict {} does not match requested number of classes {}, please supply a label_dict argument {{"label1":0, "label2":1, "label3":2 ... etc}} for each label in the dataset'.format(label_dict, num_classes)
             )
-        
+
         self.label_dict = label_dict
         self.numeric_to_label_dict = {v: k for k, v in label_dict.items()}
-        
+
         #Add user supplied transforms
         if transforms is None:
             self.transforms = dataset.get_transform
         else:
             self.transforms = transforms
-        
+
         self.save_hyperparameters()
-        
+
     def use_release(self, check_release=True):
         """Use the latest DeepForest model release from github and load model.
         Optionally download if release doesn't exist.
@@ -102,11 +102,11 @@ class deepforest(pl.LightningModule):
         # Download latest model from github release
         release_tag, self.release_state_dict = utilities.use_bird_release(check_release=check_release)
         self.model.load_state_dict(torch.load(self.release_state_dict))
-   
+
         # load saved model and tag release
         self.__release_version__ = release_tag
         print("Loading pre-built model: {}".format(release_tag))
-        
+
     def create_model(self):
         """Define a deepforest retinanet architecture"""
         self.model = model.create_model(self.num_classes, self.config["nms_thresh"],
@@ -117,17 +117,16 @@ class deepforest(pl.LightningModule):
         Args:
             callbacks (list): a list of pytorch-lightning callback classes
         """
-        
+
         #If val data is passed, monitor learning rate and setup classification metrics
         if not self.config["validation"]["csv_file"] is None:
             if logger is not None:
                 lr_monitor = LearningRateMonitor(logging_interval='epoch')
                 callbacks.append(lr_monitor)
-        
+
         self.trainer = pl.Trainer(logger=logger,
                                   max_epochs=self.config["train"]["epochs"],
                                   gpus=self.config["gpus"],
-                                  checkpoint_callback=False,
                                   accelerator=self.config["distributed_backend"],
                                   fast_dev_run=self.config["train"]["fast_dev_run"],
                                   callbacks=callbacks,
@@ -157,7 +156,7 @@ class deepforest(pl.LightningModule):
             csv_file: path to csv file
             root_dir: directory of images. If none, uses "image_dir" in config
             augment: Whether to create a training dataset, this activates data augmentations
-            
+
         Returns:
             ds: a pytorch dataset
         """
@@ -210,7 +209,7 @@ class deepforest(pl.LightningModule):
 
     def predict_image(self, image=None, path=None, return_plot=False, color=None, thickness=1):
         """Predict a single image with a deepforest model
-                
+
         Args:
             image: a float32 numpy array of a RGB with channels last format
             path: optional path to read image from disk instead of passing image arg
@@ -225,13 +224,13 @@ class deepforest(pl.LightningModule):
             raise ValueError(
                 "Path provided instead of image. If you want to predict an image from disk, is path ="
             )
-        
+
 
         if path:
             if not isinstance(path, str):
                 raise ValueError("Path expects a string path to image on disk")
             image = np.array(Image.open(path).convert("RGB")).astype("float32")
-        
+
         #sanity checks on input images
         if not type(image) == np.ndarray:
             raise TypeError("Input image is of type {}, expected numpy, if reading from PIL, wrap in np.array(image).astype(float32)".format(type(image)))
@@ -251,12 +250,12 @@ class deepforest(pl.LightningModule):
                                        iou_threshold=self.config["nms_thresh"],
                                        color=color,
                                        thickness=thickness)
-        
+
         #Set labels to character from numeric if returning boxes df
         if not return_plot:
             if not result is None:
                 result["label"] = result.label.apply(lambda x: self.numeric_to_label_dict[x])
-        
+
         return result
 
     def predict_file(self, csv_file, root_dir, savedir=None, color=None, thickness=1):
@@ -289,7 +288,7 @@ class deepforest(pl.LightningModule):
 
         #Set labels to character from numeric
         result["label"] = result.label.apply(lambda x: self.numeric_to_label_dict[x])
-            
+
         return result
 
     def predict_tile(self,
@@ -334,7 +333,7 @@ class deepforest(pl.LightningModule):
         # Load on GPU is available
         if torch.cuda.is_available():
             self.model = self.model.to("cuda")
-            
+
         self.model.eval()
         self.model.score_thresh = self.config["score_thresh"]
         self.model.nms_thresh = self.config["nms_thresh"]
@@ -358,7 +357,7 @@ class deepforest(pl.LightningModule):
         if result is None:
             print("No predictions made, returning None")
             return None
-        
+
         #Set labels to character from numeric if returning boxes df
         if not return_plot:
             if mosaic:
@@ -366,7 +365,7 @@ class deepforest(pl.LightningModule):
             else:
                 for df,image in result:
                     df["label"] = df.label.apply(lambda x: self.numeric_to_label_dict[x])
-                    
+
         return result
 
     def training_step(self, batch, batch_idx):
@@ -374,7 +373,7 @@ class deepforest(pl.LightningModule):
         """
         #Confirm model is in train mode
         self.model.train()
-        
+
         #allow for empty data if data augmentation is generated
         path, images, targets = batch
 
@@ -404,22 +403,22 @@ class deepforest(pl.LightningModule):
 
         # Log loss
         for key, value in loss_dict.items():
-            self.log("val_{}".format(key), value, on_epoch=True)     
-    
+            self.log("val_{}".format(key), value, on_epoch=True)
+
         return losses
-    
+
     def on_epoch_end(self):
         if not self.config["validation"]["csv_file"] == None:
             if (self.current_epoch + 1) % self.config["validation"]["val_accuracy_interval"] == 0 :
                 results = self.evaluate(csv_file=self.config["validation"]["csv_file"],root_dir=self.config["validation"]["root_dir"])
                 self.log("box_recall",results["box_recall"])
                 self.log("box_precision", results["box_precision"])
-                
+
                 if not type(results["class_recall"]) == type(None):
                     for index, row in results["class_recall"].iterrows():
                         self.log("{}_Recall".format(self.numeric_to_label_dict[row["label"]]),row["recall"])
                         self.log("{}_Precision".format(self.numeric_to_label_dict[row["label"]]),row["precision"])
-                
+
     def configure_optimizers(self):
         optimizer = optim.SGD(self.model.parameters(),
                                    lr=self.config["train"]["lr"],
@@ -434,7 +433,7 @@ class deepforest(pl.LightningModule):
                                                                     cooldown=0,
                                                                     min_lr=0,
                                                                     eps=1e-08)
-        
+
         #Monitor rate is val data is used
         if self.config["validation"]["csv_file"] is not None:
             return {'optimizer':optimizer, 'lr_scheduler': scheduler,"monitor":'val_classification'}
@@ -459,7 +458,7 @@ class deepforest(pl.LightningModule):
         # Load on GPU is available
         if torch.cuda.is_available():
             self.model = self.model.to("cuda")
-            
+
         self.model.eval()
         self.model.score_thresh = self.config["score_thresh"]
 
@@ -469,13 +468,13 @@ class deepforest(pl.LightningModule):
                                            savedir=savedir,
                                            device=self.current_device,
                                            iou_threshold=self.config["nms_thresh"])
-        
+
         ground_df = pd.read_csv(csv_file)
         ground_df["label"] = ground_df.label.apply(lambda x: self.label_dict[x])
-        
-        #remove empty samples from ground truth 
+
+        #remove empty samples from ground truth
         ground_df = ground_df[~((ground_df.xmin==0) &(ground_df.xmax==0))]
-        
+
         # if no arg for iou_threshold, set as config
         if iou_threshold is None:
             iou_threshold = self.config["validation"]["iou_threshold"]
@@ -485,9 +484,9 @@ class deepforest(pl.LightningModule):
                                         root_dir=root_dir,
                                         iou_threshold=iou_threshold,
                                         savedir=savedir)
-        
-        #replace classes if not NUll, wrap in try catch if no predictions 
-        if not results["results"].empty: 
+
+        #replace classes if not NUll, wrap in try catch if no predictions
+        if not results["results"].empty:
             results["results"]["predicted_label"] = results["results"]["predicted_label"].apply(lambda x: self.numeric_to_label_dict[x] if not pd.isnull(x) else x)
             results["results"]["true_label"] = results["results"]["true_label"].apply(lambda x: self.numeric_to_label_dict[x])
             results["predictions"] = predictions
